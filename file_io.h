@@ -23,8 +23,7 @@ namespace maxssau
     {
         public:
 
-            int status;
-            int status_operation;
+            
 
             file_io()
             {
@@ -213,9 +212,21 @@ namespace maxssau
                 }
             }
 
+            int GetStatus()
+            {
+                return status;
+            }
+
+            int GetStatusOperation()
+            {
+                return status_operation;
+            }
+
         private:
             FILE *handle;
             unsigned char file_mode;
+            int status;
+            int status_operation;
     };
 }
 
