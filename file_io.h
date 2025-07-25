@@ -1,233 +1,184 @@
-#ifndef __file_io__
-#define __file_io__
+#ifndef FILE_IO_H
+#define FILE_IO_H
 
 #include <stdio.h>
+#include <string>
 
 namespace maxssau
 {
-
-    enum FILE_MODE
+    enum class FileMode
     {
-        FILEMODE_READ=0,
-        FILEMODE_WRITE=1,
-        FILEMODE_APPEND=2
+        Read = 0,
+        Write = 1,
+        Append = 2
     };
 
-    enum FILE_STATUS
+    enum class FileStatus
     {
-        FILEMODE_SUCCESS=0,
-        FILEMODE_FAIL=1
+        Success = 0,
+        Fail = 1,
+        EndOfFile = 2
     };
 
-    class file_io
+    class FileIO
     {
-        public:
+    public:
+        FileIO() { StartupInit(); }
 
+        FileIO(const std::string& filename, FileMode mode)
+        {
+            StartupInit();
+            Open(filename, mode);
+        }
+
+        FileIO(const FileIO&) = delete;
+        FileIO& operator=(const FileIO&) = delete;
+
+        ~FileIO()
+        {
+            Close();
+        }
+
+        FileStatus Open(const std::string& filename, FileMode mode)
+        {
+            if (m_status != FileStatus::Success)
+            {
+                m_fileMode = mode;
+                
+                const char* modeStr = "";
+                switch (mode)
+                {
+                    case FileMode::Read:   modeStr = "rb"; break;
+                    case FileMode::Write:  modeStr = "wb"; break;
+                    case FileMode::Append: modeStr = "ab"; break;
+                }
+
+                m_handle = fopen(filename.c_str(), modeStr);
+                
+                if (m_handle)
+                {
+                    m_status = FileStatus::Success;
+                    return FileStatus::Success;
+                }
+            }
             
+            m_status = FileStatus::Fail;
+            return FileStatus::Fail;
+        }
 
-            file_io()
+        FileStatus Close()
+        {
+            if (m_handle)
             {
+                fflush(m_handle);
+                fclose(m_handle);
+                m_handle = nullptr;
+                m_status = FileStatus::Fail;
+                return FileStatus::Success;
+            }
+            return FileStatus::Fail;
+        }
 
-            };
+        FileStatus SetPosition(long position)
+        {
+            if (m_status != FileStatus::Success)
+                return FileStatus::Fail;
 
-            file_io(char filename[], unsigned char mode)
+            if (position < 0 || position > GetFileSize())
+                return FileStatus::Fail;
+
+            if (fseek(m_handle, position, SEEK_SET) != 0)
+                return FileStatus::Fail;
+
+            return FileStatus::Success;
+        }
+
+        long GetFileSize()
+        {
+            if (m_status != FileStatus::Success)
+                return -1;
+
+            long currentPos = ftell(m_handle);
+            fseek(m_handle, 0, SEEK_END);
+            long size = ftell(m_handle);
+            fseek(m_handle, currentPos, SEEK_SET);
+            
+            return size;
+        }
+
+        FileStatus WriteByte(unsigned char byte)
+        {
+            if (m_status != FileStatus::Success || 
+               (m_fileMode != FileMode::Write && m_fileMode != FileMode::Append))
+                return FileStatus::Fail;
+
+            if (fputc(byte, m_handle) == EOF)
+                return FileStatus::Fail;
+
+            return FileStatus::Success;
+        }
+
+        FileStatus WriteBlock(const unsigned char* bytes, size_t count)
+        {
+            if (m_status != FileStatus::Success || 
+               (m_fileMode != FileMode::Write && m_fileMode != FileMode::Append))
+                return FileStatus::Fail;
+
+            for (size_t i = 0; i < count; ++i)
             {
-                Init(filename,mode);
-            };
-
-            int Init(char filename[], unsigned char mode)
-            {
-                if(status!=FILEMODE_SUCCESS)
-                {
-                    file_mode=mode;
-                    switch(mode)
-                    {
-                        case FILEMODE_READ:
-                        {
-                            handle=fopen(filename,"r");
-                        }break;
-                        case FILEMODE_WRITE:
-                        {
-                            handle=fopen(filename,"w");
-                        }break;
-                        case FILEMODE_APPEND:
-                        {
-                            handle=fopen(filename,"a");
-                        }break;
-                    }
-
-                    if(handle!=0)
-                    {
-                        status=FILEMODE_SUCCESS;
-                        return FILEMODE_SUCCESS;
-                    }
-                    else
-                    {
-                        status=FILEMODE_FAIL;
-                        return FILEMODE_FAIL;
-                    }
-                }
-                status=FILEMODE_FAIL;
-                return FILEMODE_FAIL;
-            };
-
-            int SetPosition(long position)
-            {
-                if(status==FILEMODE_SUCCESS)
-                {
-                    if(position<GetFileSize() && position>=0)
-                    {
-                        status_operation=FILEMODE_FAIL;
-                        return FILEMODE_FAIL;    
-                    }
-                    else
-                    {
-                        fseek(handle,0,position);
-                        status_operation=FILEMODE_SUCCESS;
-                        return FILEMODE_SUCCESS;
-                    }
-                }
-                else
-                {
-                    status_operation=FILEMODE_FAIL;
-                    return FILEMODE_FAIL;
-                }
-
+                if (fputc(bytes[i], m_handle) == EOF)
+                    return FileStatus::Fail;
             }
 
-            long GetFileSize()
+            return FileStatus::Success;
+        }
+
+        FileStatus GetBlock(unsigned char* bytes, size_t count)
+        {
+            if (m_status != FileStatus::Success || m_fileMode != FileMode::Read)
+                return FileStatus::Fail;
+
+            for (size_t i = 0; i < count; ++i)
             {
-                long filesize=0;
-                if(status==FILEMODE_SUCCESS)
-                {
-                    long current_position=ftell(handle);
-                    fseek(handle,0,SEEK_END);
-                    filesize=ftell(handle);
-                    fseek(handle,0,current_position);
-                    return filesize;
-                }
-                else
-                {
-                    status_operation=FILEMODE_FAIL;
-                    return -1;
-                }
+                int ch = fgetc(m_handle);
+                if (ch == EOF)
+                    return feof(m_handle) ? FileStatus::EndOfFile : FileStatus::Fail;
+                
+                bytes[i] = static_cast<unsigned char>(ch);
             }
 
-            int WriteByte(unsigned char byte)
-            {
-                if(file_mode==FILEMODE_WRITE || file_mode==FILEMODE_APPEND)
-                {
-                    if(status==FILEMODE_SUCCESS)
-                    {
-                        fputc(byte, handle);
-                        if(ferror(handle)!=0)
-                        {
-                            status_operation=FILEMODE_FAIL;
-                            return FILEMODE_FAIL;
-                        }
-                        else
-                        {
-                            status_operation=FILEMODE_SUCCESS;
-                            return FILEMODE_SUCCESS;
-                        }
-                    }
-                }
-            }
+            return FileStatus::Success;
+        }
 
-            int WriteBlock(unsigned char bytes[], unsigned int count)
-            {
-                if(file_mode==FILEMODE_WRITE || file_mode==FILEMODE_APPEND)
-                {
-                    if(status==FILEMODE_SUCCESS)
-                    {
-                        for(int i=0;i<count;i++)
-                        {
-                            fputc(bytes[i],handle);
-                            if(ferror(handle)!=0)
-                            {
-                                status_operation=FILEMODE_FAIL;
-                                return FILEMODE_FAIL;
-                            }
-                        }
-                        status_operation=FILEMODE_SUCCESS;
-                        return FILEMODE_SUCCESS;
-                    }
-                }
-            }
+        FileStatus GetByte(unsigned char& result)
+        {
+            if (m_status != FileStatus::Success || m_fileMode != FileMode::Read)
+                return FileStatus::Fail;
 
-            int GetBlock(unsigned char bytes[], unsigned int count)
-            {
-                if(status==FILEMODE_SUCCESS)
-                {
-                    if(file_mode==FILEMODE_READ)
-                    {
-                        for(int i=0;i<count;i++)
-                        {
-                            bytes[i]=(unsigned char)fgetc(handle);
-                            if(feof(handle))
-                            {
-                                status_operation=FILEMODE_FAIL;
-                                return FILEMODE_FAIL;
-                            }
-                        }
-                    }
-                }
-                status_operation=FILEMODE_SUCCESS;
-                return FILEMODE_SUCCESS;
-            }
+            int ch = fgetc(m_handle);
+            if (ch == EOF)
+                return feof(m_handle) ? FileStatus::EndOfFile : FileStatus::Fail;
+            
+            result = static_cast<unsigned char>(ch);
+            return FileStatus::Success;
+        }
 
-            int GetByte(unsigned char *result)
-            {
-                if(status==FILEMODE_SUCCESS)
-                {
-                    if(file_mode==FILEMODE_READ)
-                    {
-                        result[0]=(unsigned char)fgetc(handle);
-                        if(feof(handle))
-                        {
-                            status_operation=FILEMODE_FAIL;
-                            return FILEMODE_FAIL;
-                        }
-                        status_operation=FILEMODE_SUCCESS;
-                        return FILEMODE_SUCCESS;
-                    }
-                    else
-                    {
-                        return FILEMODE_FAIL;
-                    }
-                }
-                else
-                {
-                    status_operation=FILEMODE_FAIL;
-                    return -1;
-                }
-            }
+        bool IsOpen() const { return m_handle != nullptr; }
+        FileStatus GetStatus() const { return m_status; }
+        FileMode GetMode() const { return m_fileMode; }
 
-            ~file_io()
-            {
-                if(handle!=0)
-                {
-                    fflush(handle);
-                    fclose(handle);
-                }
-            }
+    private:
+        FILE* m_handle = nullptr;
+        FileMode m_fileMode = FileMode::Read;
+        FileStatus m_status = FileStatus::Fail;
 
-            int GetStatus()
-            {
-                return status;
-            }
-
-            int GetStatusOperation()
-            {
-                return status_operation;
-            }
-
-        private:
-            FILE *handle;
-            unsigned char file_mode;
-            int status;
-            int status_operation;
+        void StartupInit()
+        {
+            m_handle = nullptr;
+            m_fileMode = FileMode::Read;
+            m_status = FileStatus::Fail;
+        }
     };
 }
 
-#endif
+#endif // FILE_IO_H
